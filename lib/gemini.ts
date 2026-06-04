@@ -3,7 +3,7 @@ export async function callGeminiAPI(prompt: string, systemInstruction: string = 
   if (!apiKey) {
     return "Vui lòng cấu hình khóa API Key của Gemini để kích hoạt trợ lý học tập thông minh này nhé!";
   }
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+  const url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=" + apiKey;
   let retries = 5;
   let delay = 1000;
   const payload = {
@@ -17,12 +17,12 @@ export async function callGeminiAPI(prompt: string, systemInstruction: string = 
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
       });
-      if (!response.ok) throw new Error(`Error: ${response.status}`);
+      if (!response.ok) throw new Error("Error: " + response.status);
       const result = await response.json();
       return result.candidates?.[0]?.content?.parts?.[0]?.text || "Không có kết quả trả về từ AI.";
-    } catch (err: any) {
+    } catch (err) {
       retries--;
-      if (retries === 0) throw new Error(err?.message || "Không thể kết nối đến Gemini.");
+      if (retries === 0) throw new Error("Không thể kết nối đến Gemini.");
       await new Promise((res) => setTimeout(res, delay));
       delay *= 2;
     }

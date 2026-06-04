@@ -3,12 +3,27 @@ import React, { useState } from 'react';
 import { 
   Award, BookOpen, User, Users, CheckCircle, Video, Layers, 
   Volume2, Sparkles, Send, Mic, MicOff, BarChart2, Activity,
-  Crown, Shield, Check, Trash2, ArrowRight, RefreshCw, Star
+  Crown
 } from 'lucide-react';
 import { callGeminiAPI } from '../lib/gemini';
 import Flashcard from '../components/Flashcard';
 
-const CURRICULUM = {
+interface VocabularyItem {
+  word: string;
+  meaning: string;
+  phonetic: string;
+  emoji: string;
+}
+
+interface Lesson {
+  id: string;
+  title: string;
+  vocabulary: VocabularyItem[];
+  sentence: string;
+  videoUrl: string;
+}
+
+const CURRICULUM: Record<number, Lesson[]> = {
   1: [
     {
       id: 'g1-u1',
@@ -75,33 +90,41 @@ const CURRICULUM = {
   ]
 };
 
-const INITIAL_LEADERBOARD = [
+interface LeaderboardUser {
+  name: string;
+  xp: number;
+  grade: number;
+  avatar: string;
+}
+
+const INITIAL_LEADERBOARD: LeaderboardUser[] = [
   { name: 'Nguyễn Minh Anh', xp: 1250, grade: 3, avatar: '👧' },
   { name: 'Trần Đăng Khoa', xp: 1100, grade: 3, avatar: '👦' },
   { name: 'Lê Quỳnh Chi', xp: 950, grade: 3, avatar: '👧' }
 ];
 
-export default function App() {
-  const [role, setRole] = useState('student');
-  const [currentGrade, setCurrentGrade] = useState(3);
-  const [activeTab, setActiveTab] = useState('courses');
-  const [selectedLesson, setSelectedLesson] = useState(CURRICULUM[3][0]);
-  const [lessonSubTab, setLessonSubTab] = useState('video');
-  const [customApiKey, setCustomApiKey] = useState("");
-  const [stats, setStats] = useState({ xp: 420, coins: 150, stars: 22, completedLessons: ['g1-u1'], badges: ['Học Thử Thách', 'Nói chuẩn AI'] });
-  const [chatInput, setChatInput] = useState("");
-  const [chatMessages, setChatMessages] = useState([{ role: 'assistant', text: 'Chào bé yêu! Cô là Ms. Hoa AI. Con có câu hỏi nào hôm nay không? 🌸' }]);
-  const [aiLoading, setAiLoading] = useState(false);
-  const [quizFinished, setQuizFinished] = useState(false);
-  const [selectedOpt, setSelectedOpt] = useState(null);
-  const [isRecording, setIsRecording] = useState(false);
-  const [speakingResult, setSpeakingResult] = useState(null);
-  const [aiWsKeywords, setAiWsKeywords] = useState("bike, kite, ship");
-  const [generatedWorksheet, setGeneratedWorksheet] = useState("");
-  const [aiLessonTopic, setAiLessonTopic] = useState("At the toyshop");
-  const [generatedLessonPlan, setGeneratedLessonPlan] = useState("");
+interface ChatMessage {
+  role: 'user' | 'assistant';
+  text: string;
+}
 
-  const speakText = (text) => {
+export default function App() {
+  const [role, setRole] = useState<'student' | 'teacher' | 'parent'>('student');
+  const [currentGrade, setCurrentGrade] = useState<number>(3);
+  const [activeTab, setActiveTab] = useState<string>('courses');
+  const [selectedLesson, setSelectedLesson] = useState<Lesson>(CURRICULUM[3][0]);
+  const [lessonSubTab, setLessonSubTab] = useState<string>('video');
+  const [customApiKey, setCustomApiKey] = useState<string>("");
+  const [stats, setStats] = useState({ xp: 420, coins: 150, stars: 22, completedLessons: ['g1-u1'], badges: ['Học Thử Thách', 'Nói chuẩn AI'] });
+  const [chatInput, setChatInput] = useState<string>("");
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([{ role: 'assistant', text: 'Chào bé yêu! Cô là Ms. Hoa AI. Con có câu hỏi nào hôm nay không? 🌸' }]);
+  const [aiLoading, setAiLoading] = useState<boolean>(false);
+  const [quizFinished, setQuizFinished] = useState<boolean>(false);
+  const [selectedOpt, setSelectedOpt] = useState<string | null>(null);
+  const [isRecording, setIsRecording] = useState<boolean>(false);
+  const [speakingResult, setSpeakingResult] = useState<any>(null);
+
+  const speakText = (text: string) => {
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(text);
@@ -136,12 +159,12 @@ export default function App() {
     }
     setIsRecording(true);
     setSpeakingResult(null);
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (SpeechRecognition) {
       const rec = new SpeechRecognition();
       rec.lang = 'en-US';
       rec.start();
-      rec.onresult = async (event) => {
+      rec.onresult = async (event: any) => {
         const spoken = event.results[0][0].transcript;
         setIsRecording(false);
         setAiLoading(true);
@@ -169,34 +192,6 @@ export default function App() {
     }));
   };
 
-  const handleGenerateWorksheet = async () => {
-    setAiLoading(true);
-    const systemPrompt = "Bạn là chuyên gia thiết kế tài liệu học tiếng Anh tiểu học. Hãy tạo một trang worksheet gồm: Phần Từ vựng, 3 câu trắc nghiệm và câu trả lời dựa trên các từ khóa cung cấp.";
-    const prompt = "Tạo worksheet cho từ khóa: " + aiWsKeywords;
-    try {
-      const result = await callGeminiAPI(prompt, systemPrompt, customApiKey);
-      setGeneratedWorksheet(result);
-    } catch (err) {
-      setGeneratedWorksheet("Lỗi: " + err.message);
-    } finally {
-      setAiLoading(false);
-    }
-  };
-
-  const handleGenerateLesson = async () => {
-    setAiLoading(true);
-    const systemPrompt = "Bạn là cố vấn sư phạm tiếng Anh tiểu học Global Success. Tạo một giáo án chuẩn 45 phút gồm các phần khởi động, thực hành và bài tập về nhà.";
-    const prompt = "Tạo giáo án chi tiết chủ đề: " + aiLessonTopic;
-    try {
-      const result = await callGeminiAPI(prompt, systemPrompt, customApiKey);
-      setGeneratedLessonPlan(result);
-    } catch (err) {
-      setGeneratedLessonPlan("Lỗi: " + err.message);
-    } finally {
-      setAiLoading(false);
-    }
-  };
-
   return (
     <div className="min-h-screen bg-amber-50 pb-12 font-sans text-amber-950">
       <header className="bg-gradient-to-r from-teal-400 via-sky-400 to-indigo-500 text-white shadow-lg">
@@ -209,7 +204,7 @@ export default function App() {
             </div>
           </div>
           <div className="flex items-center gap-2 bg-white/10 p-1 rounded-2xl">
-            {['student', 'teacher', 'parent'].map((r) => (
+            {['student', 'teacher', 'parent'].map((r: any) => (
               <button key={r} onClick={() => setRole(r)} className={"px-3 py-1.5 rounded-xl font-bold text-xs capitalize transition " + (role === r ? 'bg-amber-400 text-amber-950 shadow' : 'text-white')}>
                 {r === 'student' ? 'Học Sinh' : r === 'teacher' ? 'Giáo Viên' : 'Phụ Huynh'}
               </button>
@@ -231,7 +226,7 @@ export default function App() {
               <span>⭐ {stats.stars} Sao</span>
             </div>
             <div className="flex gap-1">
-              {stats.badges.map((b, i) => (
+              {stats.badges.map((b: string, i: number) => (
                 <span key={i} className="bg-indigo-600 text-white text-[10px] px-2.5 py-0.5 rounded-full">🏆 {b}</span>
               ))}
             </div>
@@ -244,7 +239,7 @@ export default function App() {
           <div className="bg-white p-4 rounded-3xl shadow-md border-4 border-amber-200">
             <h3 className="font-black text-amber-900 mb-3 text-sm flex items-center gap-1"><span>📚</span> Chọn Khối Lớp Học</h3>
             <div className="grid grid-cols-5 gap-1.5">
-              {[1, 2, 3, 4, 5].map((g) => (
+              {[1, 2, 3, 4, 5].map((g: number) => (
                 <button key={g} onClick={() => { setCurrentGrade(g); const list = CURRICULUM[g]; if (list?.length) setSelectedLesson(list[0]); }} className={"py-2 rounded-xl font-bold text-sm transition " + (currentGrade === g ? 'bg-amber-400 text-amber-950 border-2 border-amber-500' : 'bg-amber-100 text-amber-900')}>
                   Lớp {g}
                 </button>
@@ -261,10 +256,7 @@ export default function App() {
               </>
             )}
             {role === 'teacher' && (
-              <>
-                <button onClick={() => setActiveTab('teacher-dash')} className={"w-full text-left px-4 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2 transition " + (activeTab === 'teacher-dash' ? 'bg-indigo-600 text-white shadow-md' : 'hover:bg-amber-50')}><Activity size={16} /> Bảng Điều Khiển Giáo Viên</button>
-                <button onClick={() => setActiveTab('ai-lesson')} className={"w-full text-left px-4 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2 transition " + (activeTab === 'ai-lesson' ? 'bg-indigo-600 text-white shadow-md' : 'hover:bg-amber-50')}><Sparkles size={16} /> AI Sáng Tạo Giáo Án</button>
-              </>
+              <button onClick={() => setActiveTab('teacher-dash')} className={"w-full text-left px-4 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2 transition " + (activeTab === 'teacher-dash' ? 'bg-indigo-600 text-white shadow-md' : 'hover:bg-amber-50')}><Activity size={16} /> Bảng Điều Khiển Giáo Viên</button>
             )}
             {role === 'parent' && (
               <button onClick={() => setActiveTab('parent-dash')} className="w-full text-left px-4 py-2.5 rounded-xl text-xs font-bold bg-purple-600 text-white shadow-md flex items-center gap-2"><BarChart2 size={16} /> Nhật Ký Tiến Trình Của Con</button>
@@ -278,7 +270,7 @@ export default function App() {
               <div className="bg-white p-5 rounded-3xl shadow-md border-4 border-amber-200">
                 <h2 className="text-lg font-black text-amber-900 mb-3 flex items-center gap-1.5">Bài học Lớp {currentGrade} - Global Success</h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {(CURRICULUM[currentGrade] || []).map((unit) => (
+                  {(CURRICULUM[currentGrade] || []).map((unit: Lesson) => (
                     <div key={unit.id} onClick={() => setSelectedLesson(unit)} className={"p-4 rounded-2xl border-2 cursor-pointer transition " + (selectedLesson?.id === unit.id ? 'bg-amber-100 border-amber-400' : 'bg-white hover:bg-amber-50')}>
                       <h4 className="font-extrabold text-amber-950 text-sm">{unit.title}</h4>
                       <p className="text-[10px] text-amber-700 mt-1">Nói chuẩn: "{unit.sentence}"</p>
@@ -295,7 +287,7 @@ export default function App() {
                   </div>
 
                   <div className="flex border-b bg-amber-50/50 p-2 gap-2">
-                    {['video', 'flashcards', 'quiz'].map((tab) => (
+                    {['video', 'flashcards', 'quiz'].map((tab: string) => (
                       <button key={tab} onClick={() => setLessonSubTab(tab)} className={"px-3 py-1.5 rounded-xl text-xs font-bold capitalize transition " + (lessonSubTab === tab ? 'bg-white text-teal-600 shadow-sm' : 'text-amber-800 hover:bg-amber-100')}>
                         {tab === 'video' ? 'Video Bài Giảng' : tab === 'flashcards' ? 'Thẻ Flashcards' : 'Bài Tập Luyện'}
                       </button>
@@ -329,7 +321,7 @@ export default function App() {
 
                     {lessonSubTab === 'flashcards' && (
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                        {selectedLesson.vocabulary.map((vocab, idx) => (
+                        {selectedLesson.vocabulary.map((vocab: VocabularyItem, idx: number) => (
                           <Flashcard key={idx} vocab={vocab} onSpeak={speakText} />
                         ))}
                       </div>
@@ -342,7 +334,7 @@ export default function App() {
                             <span className="text-[10px] font-bold text-amber-700">CÂU HỎI TRẮC NGHIỆM</span>
                             <h3 className="text-base font-black text-amber-950 mt-2">Từ vựng "{selectedLesson.vocabulary[0].word}" mang ý nghĩa tiếng Việt là gì?</h3>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-4">
-                              {[selectedLesson.vocabulary[0].meaning, 'Quả táo', 'Chiếc thìa', 'Con chim'].sort().map((opt, i) => (
+                              {[selectedLesson.vocabulary[0].meaning, 'Quả táo', 'Chiếc thìa', 'Con chim'].sort().map((opt: string, i: number) => (
                                 <button key={i} onClick={() => setSelectedOpt(opt)} className={"p-3 rounded-xl font-bold text-left text-xs border transition " + (selectedOpt === opt ? 'bg-amber-400 border-amber-600' : 'bg-white hover:bg-amber-100')}>{opt}</button>
                               ))}
                             </div>
@@ -369,7 +361,7 @@ export default function App() {
                 <h3 className="font-black text-base text-amber-900">Trò chuyện với Ms. Hoa AI</h3>
               </div>
               <div className="flex-1 overflow-y-auto p-3 space-y-3 my-4 bg-amber-50/50 rounded-2xl border">
-                {chatMessages.map((m, i) => (
+                {chatMessages.map((m: ChatMessage, i: number) => (
                   <div key={i} className={"flex " + (m.role === 'user' ? 'justify-end' : 'justify-start')}><div className={"max-w-[80%] p-3 rounded-2xl text-xs leading-relaxed font-bold shadow-sm " + (m.role === 'user' ? 'bg-indigo-600 text-white' : 'bg-white border')}>{m.text}</div></div>
                 ))}
                 {aiLoading && (
@@ -390,8 +382,15 @@ export default function App() {
               <p className="text-xs text-gray-500">Mẫu câu cần bé luyện tập đọc to hôm nay là:</p>
               <p className="text-xl font-black text-indigo-700">"{selectedLesson.sentence}"</p>
               <div className="flex justify-center gap-3">
-                <button onClick={() => speakText(selectedLesson.sentence)} className="px-4 py-2 bg-indigo-50 text-indigo-700 font-bold text-xs rounded-xl animate-bounce">Nghe mẫu</button>
-                <button onClick={startVoiceRecording} className={"px-4 py-2 text-white font-bold text-xs rounded-xl transition " + (isRecording ? 'bg-red-500 animate-pulse' : 'bg-red-400')}>{isRecording ? 'Đang nghe...' : 'Đọc câu'}</button>
+                <button onClick={() => speakText(selectedLesson.sentence)} className="px-4 py-2 bg-indigo-50 text-indigo-700 font-bold text-xs rounded-xl">Nghe mẫu</button>
+                <button 
+                  onClick={startVoiceRecording} 
+                  className={`px-4 py-2 text-white font-bold text-xs rounded-xl transition ${
+                    isRecording ? 'bg-red-500 animate-pulse' : 'bg-red-400'
+                  }`}
+                >
+                  {isRecording ? 'Đang nghe...' : 'Đọc câu'}
+                </button>
               </div>
               {speakingResult && (
                 <div className="p-4 bg-amber-50 rounded-xl border border-amber-200 text-left max-w-md mx-auto space-y-1.5">
@@ -408,8 +407,8 @@ export default function App() {
           {activeTab === 'teacher-dash' && role === 'teacher' && (
             <div className="bg-white p-5 rounded-3xl shadow-md border-4 border-indigo-200">
               <h3 className="font-black text-base text-indigo-950 mb-3">Thông tin lớp học</h3>
-              <p className="text-xs text-gray-500">Bảng điều khiển theo dõi tiến độ của học sinh tiểu học.</p>
-              <div className="mt-4 overflow-x-auto">
+              <p className="text-xs text-gray-500 mb-4">Bảng điều khiển theo dõi tiến độ của học sinh tiểu học.</p>
+              <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs">
                   <thead>
                     <tr className="border-b bg-indigo-50 font-bold">
@@ -431,24 +430,6 @@ export default function App() {
                     </tr>
                   </tbody>
                 </table>
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'ai-lesson' && role === 'teacher' && (
-            <div className="space-y-6">
-              <div className="bg-white p-6 rounded-3xl shadow-md border-4 border-teal-200 space-y-4">
-                <h3 className="font-black text-amber-900 text-base">AI Worksheet & Đề Luyện Tập</h3>
-                <input type="text" value={aiWsKeywords} onChange={(e) => setAiWsKeywords(e.target.value)} className="w-full p-2.5 border-2 border-gray-150 rounded-xl text-xs font-semibold focus:outline-none focus:border-teal-400" />
-                <button onClick={handleGenerateWorksheet} disabled={aiLoading} className="w-full py-2 bg-teal-500 hover:bg-teal-600 text-white font-black text-xs rounded-xl shadow-md">{aiLoading ? 'Đang tạo...' : 'Tạo Đề Ôn Tập Bằng AI'}</button>
-                {generatedWorksheet && <pre className="p-4 bg-teal-50 border rounded-2xl text-xs font-mono whitespace-pre-wrap">{generatedWorksheet}</pre>}
-              </div>
-
-              <div className="bg-white p-6 rounded-3xl shadow-md border-4 border-indigo-200 space-y-4">
-                <h3 className="font-black text-indigo-950 text-base">AI Sáng Tạo Giáo Án GD</h3>
-                <input type="text" value={aiLessonTopic} onChange={(e) => setAiLessonTopic(e.target.value)} className="w-full p-2.5 border-2 border-gray-150 rounded-xl text-xs font-semibold focus:outline-none" />
-                <button onClick={handleGenerateLesson} disabled={aiLoading} className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs rounded-xl shadow-md">{aiLoading ? 'Đang soạn...' : 'Tạo Giáo Án Bằng AI'}</button>
-                {generatedLessonPlan && <pre className="p-4 bg-indigo-50 border rounded-2xl text-xs font-mono whitespace-pre-wrap">{generatedLessonPlan}</pre>}
               </div>
             </div>
           )}

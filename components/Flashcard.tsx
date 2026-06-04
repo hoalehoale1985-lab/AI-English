@@ -19,7 +19,7 @@ export default function Flashcard({ vocab, onSpeak }: FlashcardProps) {
   return (
     <div className="relative w-full h-44 cursor-pointer perspective" onClick={() => setFlipped(!flipped)}>
       <div 
-        className={`relative w-full h-full duration-500 preserve-3d transition-transform`}
+        className="relative w-full h-full duration-500 preserve-3d transition-transform"
         style={{ transformStyle: 'preserve-3d', transform: flipped ? 'rotateY(180deg)' : 'none' }}
       >
         <div className="absolute inset-0 w-full h-full bg-white border-4 border-amber-200 rounded-3xl flex flex-col items-center justify-center p-4 shadow-md hover:shadow-lg transition backface-hidden" style={{ backfaceVisibility: 'hidden' }}>
