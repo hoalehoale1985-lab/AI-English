@@ -1,12 +1,88 @@
-'use client';
+ 'use client';
+
 import React, { useState } from 'react';
 import { 
   Award, BookOpen, User, Users, CheckCircle, Video, Layers, 
   Volume2, Sparkles, Send, Mic, MicOff, BarChart2, Activity,
   Crown
 } from 'lucide-react';
-import { callGeminiAPI } from '../lib/gemini';
-import Flashcard from '../components/Flashcard';
+
+async function callGeminiAPI(
+  prompt: string, 
+  systemInstruction: string = "", 
+  customApiKey: string = ""
+): Promise<string> {
+  const apiKey = customApiKey || process.env.NEXT_PUBLIC_GEMINI_API_KEY || "";
+  if (!apiKey) {
+    return "Vui lòng cấu hình khóa API Key của Gemini để kích hoạt trợ lý học tập thông minh này nhé!";
+  }
+  const url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=" + apiKey;
+  let retries = 5;
+  let delay = 1000;
+  const payload = {
+    contents: [{ parts: [{ text: prompt }] }],
+    ...(systemInstruction && { systemInstruction: { parts: [{ text: systemInstruction }] } })
+  };
+  while (retries > 0) {
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      if (!response.ok) throw new Error("Error: " + response.status);
+      const result = await response.json();
+      return result.candidates?.[0]?.content?.parts?.[0]?.text || "Không có kết quả trả về từ AI.";
+    } catch (err: any) {
+      retries--;
+      if (retries === 0) throw new Error("Không thể kết nối đến Gemini.");
+      await new Promise((res) => setTimeout(res, delay));
+      delay *= 2;
+    }
+  }
+  return "";
+}
+
+interface Vocab {
+  word: string;
+  meaning: string;
+  phonetic: string;
+  emoji: string;
+}
+
+interface FlashcardProps {
+  vocab: Vocab;
+  onSpeak: (text: string) => void;
+}
+
+function Flashcard({ vocab, onSpeak }: FlashcardProps) {
+  const [flipped, setFlipped] = useState(false);
+  return (
+    <div className="relative w-full h-44 cursor-pointer perspective" onClick={() => setFlipped(!flipped)}>
+      <div 
+        className="relative w-full h-full duration-500 preserve-3d transition-transform"
+        style={{ transformStyle: 'preserve-3d', transform: flipped ? 'rotateY(180deg)' : 'none' }}
+      >
+        <div className="absolute inset-0 w-full h-full bg-white border-4 border-amber-200 rounded-3xl flex flex-col items-center justify-center p-4 shadow-md hover:shadow-lg transition backface-hidden" style={{ backfaceVisibility: 'hidden' }}>
+          <span className="text-4xl mb-2">{vocab.emoji}</span>
+          <span className="text-lg font-black text-amber-950 tracking-wide">{vocab.word}</span>
+          <span className="text-xs text-indigo-600 font-bold">{vocab.phonetic}</span>
+          <button 
+            onClick={(e) => { e.stopPropagation(); onSpeak(vocab.word); }}
+            className="absolute top-3 right-3 p-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 rounded-full transition"
+          >
+            <Volume2 size={16} />
+          </button>
+        </div>
+        <div className="absolute inset-0 w-full h-full bg-gradient-to-br from-indigo-500 to-sky-600 text-white rounded-3xl flex flex-col items-center justify-center p-4 shadow-lg backface-hidden text-center" style={{ backfaceVisibility: 'hidden', transform: 'rotateY(180deg)' }}>
+          <span className="text-xs font-bold text-indigo-200 uppercase tracking-widest mb-1.5">Nghĩa tiếng Việt</span>
+          <span className="text-xl font-black">{vocab.meaning}</span>
+          <span className="text-[10px] text-sky-100 mt-3 font-medium">Bấm để lật lại thẻ</span>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 interface VocabularyItem {
   word: string;
@@ -90,14 +166,7 @@ const CURRICULUM: Record<number, Lesson[]> = {
   ]
 };
 
-interface LeaderboardUser {
-  name: string;
-  xp: number;
-  grade: number;
-  avatar: string;
-}
-
-const INITIAL_LEADERBOARD: LeaderboardUser[] = [
+const INITIAL_LEADERBOARD = [
   { name: 'Nguyễn Minh Anh', xp: 1250, grade: 3, avatar: '👧' },
   { name: 'Trần Đăng Khoa', xp: 1100, grade: 3, avatar: '👦' },
   { name: 'Lê Quỳnh Chi', xp: 950, grade: 3, avatar: '👧' }
@@ -112,17 +181,18 @@ export default function App() {
   const [role, setRole] = useState<'student' | 'teacher' | 'parent'>('student');
   const [currentGrade, setCurrentGrade] = useState<number>(3);
   const [activeTab, setActiveTab] = useState<string>('courses');
-  const [selectedLesson, setSelectedLesson] = useState<Lesson>(CURRICULUM[3][0]);
+  const [selectedLesson, setSelectedLesson] = useState<any>(CURRICULUM[3][0]);
   const [lessonSubTab, setLessonSubTab] = useState<string>('video');
   const [customApiKey, setCustomApiKey] = useState<string>("");
   const [stats, setStats] = useState({ xp: 420, coins: 150, stars: 22, completedLessons: ['g1-u1'], badges: ['Học Thử Thách', 'Nói chuẩn AI'] });
-  const [chatInput, setChatInput] = useState<string>("");
+  const [chatInput, setChatInput] = useState("");
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([{ role: 'assistant', text: 'Chào bé yêu! Cô là Ms. Hoa AI. Con có câu hỏi nào hôm nay không? 🌸' }]);
-  const [aiLoading, setAiLoading] = useState<boolean>(false);
-  const [quizFinished, setQuizFinished] = useState<boolean>(false);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [quizFinished, setQuizFinished] = useState(false);
   const [selectedOpt, setSelectedOpt] = useState<string | null>(null);
-  const [isRecording, setIsRecording] = useState<boolean>(false);
+  const [isRecording, setIsRecording] = useState(false);
   const [speakingResult, setSpeakingResult] = useState<any>(null);
+  const [genLesson, setGenLesson] = useState("");
 
   const speakText = (text: string) => {
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
@@ -180,16 +250,6 @@ export default function App() {
         setSpeakingResult({ text: selectedLesson.sentence, feedback: "Phát âm rất tuyệt vời! Đúng giọng chuẩn bản xứ.", score: 10 });
       }, 2000);
     }
-  };
-
-  const handleNextQuiz = () => {
-    setQuizFinished(true);
-    setStats(prev => ({
-      ...prev,
-      xp: prev.xp + 50,
-      coins: prev.coins + 15,
-      completedLessons: prev.completedLessons.includes(selectedLesson.id) ? prev.completedLessons : [...prev.completedLessons, selectedLesson.id]
-    }));
   };
 
   return (
@@ -270,7 +330,7 @@ export default function App() {
               <div className="bg-white p-5 rounded-3xl shadow-md border-4 border-amber-200">
                 <h2 className="text-lg font-black text-amber-900 mb-3 flex items-center gap-1.5">Bài học Lớp {currentGrade} - Global Success</h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {(CURRICULUM[currentGrade] || []).map((unit: Lesson) => (
+                  {(CURRICULUM[currentGrade] || []).map((unit) => (
                     <div key={unit.id} onClick={() => setSelectedLesson(unit)} className={"p-4 rounded-2xl border-2 cursor-pointer transition " + (selectedLesson?.id === unit.id ? 'bg-amber-100 border-amber-400' : 'bg-white hover:bg-amber-50')}>
                       <h4 className="font-extrabold text-amber-950 text-sm">{unit.title}</h4>
                       <p className="text-[10px] text-amber-700 mt-1">Nói chuẩn: "{unit.sentence}"</p>
@@ -338,7 +398,7 @@ export default function App() {
                                 <button key={i} onClick={() => setSelectedOpt(opt)} className={"p-3 rounded-xl font-bold text-left text-xs border transition " + (selectedOpt === opt ? 'bg-amber-400 border-amber-600' : 'bg-white hover:bg-amber-100')}>{opt}</button>
                               ))}
                             </div>
-                            <button onClick={handleNextQuiz} className="w-full mt-4 py-2 bg-teal-500 hover:bg-teal-600 text-white font-bold text-xs rounded-xl shadow">Gửi câu trả lời</button>
+                            <button onClick={() => setQuizFinished(true)} className="w-full mt-4 py-2 bg-teal-500 hover:bg-teal-600 text-white font-bold text-xs rounded-xl shadow">Gửi câu trả lời</button>
                           </div>
                         ) : (
                           <div className="text-center py-6 space-y-3">
@@ -385,9 +445,7 @@ export default function App() {
                 <button onClick={() => speakText(selectedLesson.sentence)} className="px-4 py-2 bg-indigo-50 text-indigo-700 font-bold text-xs rounded-xl">Nghe mẫu</button>
                 <button 
                   onClick={startVoiceRecording} 
-                  className={`px-4 py-2 text-white font-bold text-xs rounded-xl transition ${
-                    isRecording ? 'bg-red-500 animate-pulse' : 'bg-red-400'
-                  }`}
+                  className={"px-4 py-2 text-white font-bold text-xs rounded-xl transition " + (isRecording ? 'bg-red-500 animate-pulse' : 'bg-red-400')}
                 >
                   {isRecording ? 'Đang nghe...' : 'Đọc câu'}
                 </button>
@@ -455,3 +513,4 @@ export default function App() {
     </div>
   );
 }
+
