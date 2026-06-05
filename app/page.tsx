@@ -1,24 +1,42 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Award, BookOpen, User, Users, CheckCircle, Video, Layers, 
-  Volume2, Sparkles, FileText, Send, Mic, MicOff, RefreshCw, 
-  BarChart2, Crown, Shield, Activity, Edit3, ArrowRight, Plus, Trash2
+  Volume2, Sparkles, Send, Mic, MicOff, BarChart2, Activity,
+  Crown, Shield, Edit3, ArrowRight, RefreshCw, FileText, Trash2
 } from 'lucide-react';
 
 // --- KẾT NỐI HỆ THỐNG CƠ SỞ DỮ LIỆU FIREBASE AN TOÀN ---
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getFirestore, collection, addDoc, getDocs, query, orderBy } from 'firebase/firestore';
 
-// --- KHỞI TẠO TIỆN ÍCH TRUY XUẤT AN TOÀN BIẾN MÔI TRƯỜNG ---
+// Định nghĩa Interface dữ liệu
+interface Vocab {
+  word: string;
+  meaning: string;
+  phonetic: string;
+  emoji: string;
+}
+
+interface Lesson {
+  id: string;
+  grade: number;
+  title: string;
+  vocabulary: Vocab[];
+  sentence: string;
+  videoUrl: string;
+  createdAt?: string;
+}
+
+// Tránh lỗi crash ở môi trường client sandbox không có đối tượng process
 const getEnv = (key: string): string => {
   try {
     if (typeof process !== 'undefined' && process.env) {
-      return process.env[key] || "";
+      return (process.env as any)[key] || "";
     }
   } catch (e) {
-    // Tránh lỗi crash ở môi trường client sandbox không có đối tượng process
+    // Không làm gì
   }
   return "";
 };
@@ -89,10 +107,11 @@ async function callGeminiAPI(
 }
 
 // --- CURRICULUM ĐỊNH DẠNG MẪU (BẢN VÁ LỖI YOUTUBE NHÚNG) ---
-const CURRICULUM: Record<number, any[]> = {
+const CURRICULUM: Record<number, Lesson[]> = {
   1: [
     {
       id: 'g1-u1',
+      grade: 1,
       title: 'Unit 1: In the school playground',
       vocabulary: [
         { word: 'book', meaning: 'quyển sách', phonetic: '/bʊk/', emoji: '📖' },
@@ -107,6 +126,7 @@ const CURRICULUM: Record<number, any[]> = {
   2: [
     {
       id: 'g2-u1',
+      grade: 2,
       title: 'Unit 1: At the campsite',
       vocabulary: [
         { word: 'tent', meaning: 'cái lều', phonetic: '/tent/', emoji: '⛺' },
@@ -119,6 +139,7 @@ const CURRICULUM: Record<number, any[]> = {
   3: [
     {
       id: 'g3-u1',
+      grade: 3,
       title: 'Unit 1: Hello!',
       vocabulary: [
         { word: 'hello', meaning: 'xin chào', phonetic: '/həˈləʊ/', emoji: '👋' },
@@ -133,6 +154,7 @@ const CURRICULUM: Record<number, any[]> = {
   4: [
     {
       id: 'g4-u1',
+      grade: 4,
       title: 'Unit 1: My Friends',
       vocabulary: [
         { word: 'Vietnam', meaning: 'Nước Việt Nam', phonetic: '/ˌvjetˈnæm/', emoji: '🇻🇳' },
@@ -145,6 +167,7 @@ const CURRICULUM: Record<number, any[]> = {
   5: [
     {
       id: 'g5-u1',
+      grade: 5,
       title: 'Unit 1: All About Me',
       vocabulary: [
         { word: 'friendly', meaning: 'thân thiện', phonetic: '/ˈfrendli/', emoji: '😊' },
@@ -155,12 +178,6 @@ const CURRICULUM: Record<number, any[]> = {
     }
   ]
 };
-
-const INITIAL_LEADERBOARD = [
-  { name: 'Nguyễn Minh Anh', xp: 1250, grade: 3, avatar: '👧' },
-  { name: 'Trần Đăng Khoa', xp: 1100, grade: 3, avatar: '👦' },
-  { name: 'Lê Quỳnh Chi', xp: 950, grade: 3, avatar: '👧' }
-];
 
 export default function App() {
   const [role, setRole] = useState<'student' | 'teacher' | 'parent'>('student');
@@ -458,13 +475,13 @@ export default function App() {
         <div className="bg-amber-300 py-2.5 shadow-inner">
           <div className="max-w-7xl mx-auto px-4 flex justify-between items-center text-amber-950 font-black text-sm">
             <div className="flex gap-4">
-              <span>✨ " + stats.xp + " XP</span>
-              <span>🪙 " + stats.coins + " Xu</span>
-              <span>⭐ " + stats.stars + " Sao</span>
+              <span>✨ {stats.xp} XP</span>
+              <span>🪙 {stats.coins} Xu</span>
+              <span>⭐ {stats.stars} Sao</span>
             </div>
             <div className="flex gap-1">
               {stats.badges.map((b: string, i: number) => (
-                <span key={i} className="bg-indigo-600 text-white text-[10px] px-2.5 py-0.5 rounded-full">🏆 " + b + "</span>
+                <span key={i} className="bg-indigo-600 text-white text-[10px] px-2.5 py-0.5 rounded-full">🏆 {b}</span>
               ))}
             </div>
           </div>
@@ -495,7 +512,7 @@ export default function App() {
                   onClick={() => handleGradeChange(g)}
                   className={"py-2 rounded-xl font-bold text-sm transition " + (currentGrade === g ? 'bg-amber-400 text-amber-950 border-2 border-amber-500' : 'bg-amber-100 text-amber-900')}
                 >
-                  Lớp " + g + "
+                  Lớp {g}
                 </button>
               ))}
             </div>
@@ -527,7 +544,7 @@ export default function App() {
               
               <div className="bg-white p-5 rounded-3xl shadow-md border-4 border-amber-200">
                 <h2 className="text-lg font-black text-amber-900 mb-3 flex items-center gap-1.5">
-                  Bài học Lớp " + currentGrade + " - Global Success
+                  Bài học Lớp {currentGrade} - Global Success
                 </h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   {totalLessons.map((unit) => (
@@ -540,7 +557,7 @@ export default function App() {
                         {unit.title}
                         {unit.id.includes('-custom-') && <span className="bg-indigo-100 text-indigo-700 text-[9px] px-1.5 py-0.5 rounded-full font-bold">Bài cô giao 🌟</span>}
                       </h4>
-                      <p className="text-[10px] text-amber-700 mt-1">Nói chuẩn: \"" + unit.sentence + "\"</p>
+                      <p className="text-[10px] text-amber-700 mt-1">Nói chuẩn: "{unit.sentence}"</p>
                     </div>
                   ))}
                 </div>
@@ -581,7 +598,7 @@ export default function App() {
                         <div className="p-3 bg-indigo-50 border border-indigo-100 rounded-xl">
                           <span className="text-[10px] font-bold text-indigo-700 block mb-1">MẪU CÂU HỌC:</span>
                           <p className="text-base font-black text-indigo-950 flex items-center gap-2">
-                            \"" + selectedLesson.sentence + "\"
+                            "{selectedLesson.sentence}"
                             <button onClick={() => speakText(selectedLesson.sentence)} className="p-1 bg-white hover:bg-indigo-100 rounded-full">
                               <Volume2 size={14} className="text-indigo-600" />
                             </button>
@@ -622,7 +639,7 @@ export default function App() {
                         {!quizFinished ? (
                           <div className="bg-amber-50 p-5 rounded-2xl border-2 border-amber-200">
                             <span className="text-[10px] font-bold text-amber-700">CÂU HỎI TRẮC NGHIỆM</span>
-                            <h3 className="text-base font-black text-amber-950 mt-2">Từ vựng \"" + selectedLesson.vocabulary[0].word + "\" mang ý nghĩa tiếng Việt là gì?</h3>
+                            <h3 className="text-base font-black text-amber-950 mt-2">Từ vựng "{selectedLesson.vocabulary[0].word}" mang ý nghĩa tiếng Việt là gì?</h3>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-4">
                               {[selectedLesson.vocabulary[0].meaning, 'Quả táo', 'Chiếc thìa', 'Con chim'].sort().map((opt, i) => (
                                 <button key={i} onClick={() => setSelectedOpt(opt)} className={"p-3 rounded-xl font-bold text-left text-xs border transition " + (selectedOpt === opt ? 'bg-amber-400 border-amber-600' : 'bg-white hover:bg-amber-100')}>{opt}</button>
@@ -654,7 +671,7 @@ export default function App() {
                 <div className="flex items-center gap-2 border-b pb-3">
                   <span className="text-3xl">🚀</span>
                   <div>
-                    <h3 className="font-black text-indigo-950 text-base">Đăng Bài Giảng & Bài Tập Mới (Khối Lớp " + currentGrade + ")</h3>
+                    <h3 className="font-black text-indigo-950 text-base">Đăng Bài Giảng & Bài Tập Mới (Khối Lớp {currentGrade})</h3>
                     <p className="text-xs text-gray-400">Bài soạn của cô giáo sẽ hiển thị ngay lập tức lên Thư Viện của học sinh</p>
                   </div>
                 </div>
@@ -827,7 +844,7 @@ export default function App() {
               <span className="text-3xl">🎙️</span>
               <h2 className="text-lg font-black text-amber-900">Phòng Luyện Phát Âm Trí Tuệ AI</h2>
               <p className="text-xs text-gray-500">Mẫu câu cần bé luyện tập đọc to hôm nay là:</p>
-              <p className="text-xl font-black text-indigo-700">\"" + selectedLesson.sentence + "\"</p>
+              <p className="text-xl font-black text-indigo-700">"{selectedLesson.sentence}"</p>
               <div className="flex justify-center gap-3">
                 <button onClick={() => speakText(selectedLesson.sentence)} className="px-4 py-2 bg-indigo-50 text-indigo-700 font-bold text-xs rounded-xl">Nghe mẫu</button>
                 <button 
@@ -841,7 +858,7 @@ export default function App() {
                 <div className="p-4 bg-amber-50 rounded-xl border border-amber-200 text-left max-w-md mx-auto space-y-1.5">
                   <div className="flex justify-between items-center font-bold">
                     <span className="text-xs text-gray-500">ĐÁNH GIÁ CHẤM ĐIỂM AI:</span>
-                    <span className="text-sm text-amber-600">⭐ " + speakingResult.score + "/10</span>
+                    <span className="text-sm text-amber-600">⭐ {speakingResult.score}/10</span>
                   </div>
                   <p className="text-xs text-gray-700 font-semibold">{speakingResult.feedback}</p>
                 </div>
@@ -872,4 +889,3 @@ export default function App() {
     </div>
   );
 }
-
